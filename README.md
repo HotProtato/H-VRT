@@ -17,8 +17,6 @@ The `HVRT_Partitioner` uses a novel heuristic to generate partitions: it trains 
 ## Installation
 
 ```bash
-# Note: This package is not yet published to PyPI.
-# Once published, you will be able to install it via pip:
 pip install hvrt-partitioner
 ```
 
