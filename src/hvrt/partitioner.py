@@ -13,7 +13,7 @@ class HVRT_Partitioner:
     This method is designed for creating a large number of fine-grained partitions
     ("micro-approximations") and is optimized for speed at scale.
     """
-    def __init__(self, max_leaf_nodes=None):
+    def __init__(self, max_leaf_nodes=None, **tree_kwargs):
         """
         Initializes the HVRT_Partitioner.
 
@@ -22,6 +22,8 @@ class HVRT_Partitioner:
                                           for the decision tree. Defaults to None (unlimited).
         """
         self.max_leaf_nodes = max_leaf_nodes
+        self.tree_kwargs = tree_kwargs
+        self.tree_kwargs.setdefault("random_state", 42)
         self.tree_ = None
         self.scaler_ = None
 
@@ -48,7 +50,8 @@ class HVRT_Partitioner:
         # 3. Train the Decision Tree Regressor to create partitions
         self.tree_ = DecisionTreeRegressor(
             max_leaf_nodes=self.max_leaf_nodes,
-            random_state=42
+            random_state=42,
+            **self.tree_kwargs
         )
         self.tree_.fit(X, y_synthetic)
         return self
