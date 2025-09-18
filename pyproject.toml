@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hvrt-partitioner"
-version = "0.1.0"
+version = "0.1.2"
 authors = [
   { name="Jake"},
 ]
@@ -14,7 +14,6 @@ readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -28,3 +27,8 @@ dependencies = [
 
 [project.urls]
 "Homepage" = "https://github.com/HotProtato/H-VRT"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
