@@ -2,8 +2,9 @@ from typing import Dict
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, TargetEncoder
 from sklearn.tree import DecisionTreeRegressor
+from sklearn.compose import ColumnTransformer
 
 
 class HVRTPartitioner:
@@ -28,38 +29,53 @@ class HVRTPartitioner:
         self.tree_kwargs.setdefault("random_state", 42)
         self.tree_ = None
         self.scaler_ = None
+        self.encoder_ = None
 
     def fit(self, X):
         """
         Fits the partitioner to the data X.
 
         Args:
-            X (pd.DataFrame or np.ndarray): The input data with continuous features.
+            X (pd.DataFrame or np.ndarray): The input data.
 
         Returns:
             self: The fitted partitioner instance.
         """
-        if not isinstance(X, (pd.DataFrame, np.ndarray)):
-            raise ValueError("Input data X must be a pandas DataFrame or a numpy array.")
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
 
-        # 1. Z-score normalization
+        continuous_features = X.select_dtypes(include=np.number)
+        categorical_features = X.select_dtypes(exclude=np.number)
+
+        # 1. Z-score normalization for continuous features
         self.scaler_ = StandardScaler()
-        X_scaled = self.scaler_.fit_transform(X)
+        X_scaled = self.scaler_.fit_transform(continuous_features)
 
-        # 2. Update values based on weights if applicable
+        # 2. Apply weights to continuous features
         if self.weights:
-            for col in self.weights:
-                X_scaled[:, col] *= self.weights[col]
-        
-        # 3. Create the synthetic target 'y' by summing the z-scores
-        y_synthetic = X_scaled.sum(axis=1)
+            for i, col in enumerate(continuous_features.columns):
+                if col in self.weights:
+                    X_scaled[:, i] *= self.weights[col]
 
-        # 4. Train the Decision Tree Regressor to create partitions
+        # 3. Create synthetic target 'y'
+        y_synthetic = pd.Series(X_scaled.sum(axis=1), index=X.index)
+
+        # 4. Target encode categorical features if they exist
+        X_for_tree = X.copy()
+        if not categorical_features.empty:
+            categorical_feature_names = list(categorical_features.columns)
+            self.encoder_ = ColumnTransformer(
+                [ ('target_encoder', TargetEncoder(target_type='continuous'), categorical_feature_names)],
+                remainder='passthrough'
+            )
+            X_for_tree = self.encoder_.fit_transform(X, y_synthetic)
+
+        # 5. Train the Decision Tree Regressor
         self.tree_ = DecisionTreeRegressor(
             max_leaf_nodes=self.max_leaf_nodes,
             **self.tree_kwargs
         )
-        self.tree_.fit(X, y_synthetic)
+        self.tree_.fit(X_for_tree, y_synthetic)
         return self
 
     def get_partitions(self, X):
@@ -75,4 +91,12 @@ class HVRTPartitioner:
         """
         if self.tree_ is None:
             raise RuntimeError("The partitioner has not been fitted yet. Call fit() first.")
-        return self.tree_.apply(X)
+
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
+
+        X_for_apply = X.copy()
+        if self.encoder_:
+            X_for_apply = self.encoder_.transform(X_for_apply)
+
+        return self.tree_.apply(X_for_apply)
