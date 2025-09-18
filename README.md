@@ -72,8 +72,9 @@ The core heuristic is simple yet effective:
 
 1.  **Standardize:** For each feature, the data is standardized using a Z-score transformation (`(value - mean) / std_dev`).
 2.  **Synthesize Target:** A new, single target vector (`y`) is created by summing the z-scores across all features for each sample. This vector represents a measure of each sample's combined deviation from the mean.
-3.  **Fit Tree:** A standard `DecisionTreeRegressor` is trained to predict this synthetic `y` using the original features. The `max_leaf_nodes` parameter is used to control the granularity of the tree.
-4.  **Extract Partitions:** The terminal leaves of the fitted tree serve as the final partitions. The `.get_partitions()` method simply returns the ID of the leaf node that each sample falls into.
+3.  **Category Encoding:** Target encoding is used for all categorical values against the synthetic y to assist in forming the tree.
+4.  **Fit Tree:** A standard `DecisionTreeRegressor` is trained to predict this synthetic `y` using the original features. The `max_leaf_nodes` parameter is used to control the granularity of the tree.
+5.  **Extract Partitions:** The terminal leaves of the fitted tree serve as the final partitions. The `.get_partitions()` method simply returns the ID of the leaf node that each sample falls into.
 
 ## License
 
