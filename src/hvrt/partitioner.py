@@ -1,3 +1,4 @@
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -5,7 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeRegressor
 
 
-class HVRT_Partitioner:
+class HVRTPartitioner:
     """
     A fast, scalable algorithm for creating data partitions by training a decision tree
     on a synthetic target variable derived from the z-scores of the input features.
@@ -13,15 +14,16 @@ class HVRT_Partitioner:
     This method is designed for creating a large number of fine-grained partitions
     ("micro-approximations") and is optimized for speed at scale.
     """
-    def __init__(self, max_leaf_nodes=None, **tree_kwargs):
+    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, **tree_kwargs):
         """
-        Initializes the HVRT_Partitioner.
+       Initializes the HVRTPartitioner with the specified parameters.
 
-        Args:
-            max_leaf_nodes (int, optional): The maximum number of leaf nodes (partitions)
-                                          for the decision tree. Defaults to None (unlimited).
+        :param max_leaf_nodes: The number of partitions to create.
+        :param weights: Increase or reduce the impact of each feature on the partitioning through weights.
+        :param tree_kwargs: Additional arguments to be passed to the scikit-learn Decision Tree Regressor.
         """
         self.max_leaf_nodes = max_leaf_nodes
+        self.weights = weights
         self.tree_kwargs = tree_kwargs
         self.tree_kwargs.setdefault("random_state", 42)
         self.tree_ = None
@@ -43,14 +45,18 @@ class HVRT_Partitioner:
         # 1. Z-score normalization
         self.scaler_ = StandardScaler()
         X_scaled = self.scaler_.fit_transform(X)
+
+        # 2. Update values based on weights if applicable
+        if self.weights:
+            for col in self.weights:
+                X_scaled[:, col] *= self.weights[col]
         
-        # 2. Create the synthetic target 'y' by summing the z-scores
+        # 3. Create the synthetic target 'y' by summing the z-scores
         y_synthetic = X_scaled.sum(axis=1)
 
-        # 3. Train the Decision Tree Regressor to create partitions
+        # 4. Train the Decision Tree Regressor to create partitions
         self.tree_ = DecisionTreeRegressor(
             max_leaf_nodes=self.max_leaf_nodes,
-            random_state=42,
             **self.tree_kwargs
         )
         self.tree_.fit(X, y_synthetic)
