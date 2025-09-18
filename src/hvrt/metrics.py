@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -34,7 +34,7 @@ def calculate_feature_hhi_metric(X, labels):
 
     feature_hhi_scores = []
     # For each feature...
-    for col in X.columns:
+    for col in X.select_dtypes(include=np.number).columns:
         feature_data = X[col]
 
         # Calculate variance of the feature within each cluster
@@ -108,9 +108,12 @@ def full_report(
     :return: A dictionary of feature reports, indexed by feature name.
     """
     X, unique_labels, counts, n_clusters = _check_params(X, labels)
+    # Select only continuous (numeric) features for reporting
+    continuous_features = X.select_dtypes(include=np.number)
+
     feature_report_data: Dict[str, FeatureReport] = {}
 
-    for col in X.columns:
+    for col in continuous_features.columns:
         report = FeatureReport(name=col)
 
         # Efficiently get both stats in one pass
