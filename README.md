@@ -22,11 +22,11 @@ pip install hvrt-partitioner
 
 ## Quick Start
 
-Here is a simple example of how to use the `HVRT_Partitioner` to partition a dataset into 200 segments.
+Here is a simple example of how to use the `HVRTPartitioner` to partition a dataset into 200 segments.
 
 ```python
 import numpy as np
-from hvrt import HVRT_Partitioner
+from hvrt import HVRTPartitioner
 
 # 1. Generate sample data
 X_sample = np.random.rand(10000, 10)
@@ -61,6 +61,7 @@ from hvrt import calculate_feature_hhi_metric
 
 # 4. Evaluate the quality of the partitions
 hhi_score = calculate_feature_hhi_metric(X_sample, partition_labels)
+# NOTE: This method is now deprecated in preference of "full_report".
 
 print(f"\nFeature Variance HHI Score (lower is better): {hhi_score:.6f}")
 ```
