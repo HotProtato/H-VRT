@@ -18,12 +18,12 @@ The `HVRTPartitioner` uses a novel heuristic to generate partitions: it trains a
 
 For the core functionality:
 ```bash
-pip install .
+pip install hvrt-partitioner
 ```
 
 To include plotting and visualization capabilities, install with the `[viz]` extra:
 ```bash
-pip install .[viz]
+pip install hvrt-partitioner[viz]
 ```
 
 ## Quick Start
