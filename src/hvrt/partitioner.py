@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler, TargetEncoder
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.compose import ColumnTransformer
+from sklearn.base import TransformerMixin, clone
 
 
 class HVRTPartitioner:
@@ -15,7 +16,7 @@ class HVRTPartitioner:
     This method is designed for creating a large number of fine-grained partitions
     ("micro-approximations") and is optimized for speed at scale.
     """
-    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, **tree_kwargs):
+    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), **tree_kwargs):
         """
        Initializes the HVRTPartitioner with the specified parameters.
 
@@ -28,7 +29,7 @@ class HVRTPartitioner:
         self.tree_kwargs = tree_kwargs
         self.tree_kwargs.setdefault("random_state", 42)
         self.tree_ = None
-        self.scaler_ = None
+        self.scaler_ = clone(scaler)
         self.encoder_ = None
 
     def fit(self, X):
@@ -47,8 +48,7 @@ class HVRTPartitioner:
         continuous_features = X.select_dtypes(include=np.number)
         categorical_features = X.select_dtypes(exclude=np.number)
 
-        # 1. Z-score normalization for continuous features
-        self.scaler_ = StandardScaler()
+        # 1. normalization for continuous features
         X_scaled = self.scaler_.fit_transform(continuous_features)
 
         # 2. Apply weights to continuous features
@@ -100,3 +100,9 @@ class HVRTPartitioner:
             X_for_apply = self.encoder_.transform(X_for_apply)
 
         return self.tree_.apply(X_for_apply)
+
+    def fit_predict(self, X):
+        if self.tree_:
+            return self.get_partitions(X)
+        self.fit(X)
+        return self.get_partitions(X)
