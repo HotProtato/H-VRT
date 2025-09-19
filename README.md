@@ -1,22 +1,21 @@
 
+
 # H-VRT: Hybrid Variance-Reduction Tree Partitioner
 
-[![PyPI version](https://badge.fury.io/py/hvrt-partitioner.svg)](https://badge.fury.io/py/hvrt-partitioner) <!--- Placeholder badge -->
+[![PyPI version](https://badge.fury.io/py/hvrt-partitioner.svg)](https://badge.fury.io/py/hvrt-partitioner)
 
 A fast, scalable algorithm for creating fine-grained data partitions, optimized for speed on large datasets. This tool is ideal for pre-processing before fitting local models (e.g., linear regression) on distinct segments of your data, a technique often used for piece-wise approximations of complex, non-linear relationships.
 
-The `HVRTPartitioner` uses a novel heuristic to generate partitions: it trains a `DecisionTreeRegressor` on a synthetic target variable created by summing the z-scores of the input features. This approach avoids the expensive iterative process of traditional clustering algorithms like KMeans, leading to a significant speed advantage at high partition counts.
-
 ## Key Features
 
-- **Extremely Fast:** Orders of magnitude faster than KMeans for creating a large number of partitions on datasets with millions of samples.
+- **Extremely Fast:** Orders of magnitude faster than KMeans for creating a large number of partitions.
 - **Scalable:** Training time scales efficiently as the desired number of partitions increases.
-- **Simple:** Implements a straightforward, non-iterative partitioning logic.
-- **Analysis Tools:** Includes a powerful `PartitionProfiler` to analyze, visualize, and save reports on partition quality.
+- **Configurable:** Allows for custom scaling methods to be used in the partitioning process.
+- **Analysis Tools:** Includes a powerful `PartitionProfiler` and `DistributionAnalyzer` to analyze, visualize, and save reports on partition quality and effects.
 
 ## Installation
 
-For the core functionality:
+From PyPI:
 ```bash
 pip install hvrt-partitioner
 ```
@@ -28,8 +27,6 @@ pip install hvrt-partitioner[viz]
 
 ## Quick Start
 
-Here is a simple example of how to use the `HVRTPartitioner` to partition a dataset into 200 segments.
-
 ```python
 import numpy as np
 import pandas as pd
@@ -39,75 +36,67 @@ from hvrt import HVRTPartitioner
 X_sample = pd.DataFrame(np.random.rand(10000, 10), columns=[f'feat_{i}' for i in range(10)])
 
 # 2. Initialize and fit the partitioner
-# We want to create a maximum of 200 partitions
 partitioner = HVRTPartitioner(max_leaf_nodes=200)
 partitioner.fit(X_sample)
 
 # 3. Get the partition labels for each sample
-# The output is an array of integers, where each integer is a partition ID.
 partition_labels = partitioner.get_partitions(X_sample)
 
 print(f"Successfully assigned {len(X_sample)} samples to {len(np.unique(partition_labels))} partitions.")
-print("First 10 partition labels:", partition_labels[:10])
 ```
 
 ## Analyzing Partitions
 
-The library includes powerful tools for understanding the quality of your partitions.
+The library includes powerful tools for understanding the quality and effects of your partitions.
 
-### High-Level Analysis: `PartitionProfiler`
+### High-Level Summary: `PartitionProfiler`
 
-The `PartitionProfiler` is the easiest way to get a comprehensive overview of your partitions. It can generate summary tables, create insightful visualizations, and save all artifacts to disk.
+The `PartitionProfiler` provides a comprehensive overview of your partitions. It generates summary tables, creates insightful visualizations (like the Binned Violin Plot for large partition counts), and saves all artifacts to disk.
 
 ```python
 from hvrt import PartitionProfiler
 
-# ... after getting partition_labels from the partitioner
-
-# Initialize the profiler
 profiler = PartitionProfiler(
     data=X_sample,
     partition_labels=pd.Series(partition_labels, index=X_sample.index),
-    output_path="my_profiler_output" # Optional: saves all plots and data
+    output_path="my_profiler_output" # Optional
 )
-
-# Run the full analysis
 profiler.run_profiling()
 ```
 
-This will print a summary table and generate several plots:
-- A distribution of sample counts across partitions.
-- For the top features (by HHI), it will generate distribution plots.
-- If the number of partitions is large, it intelligently switches to a **Binned Violin Plot** to show the trend of a feature's distribution across the sorted partitions.
+### Distributional Analysis: `DistributionAnalyzer`
 
-### Low-Level Analysis: `full_report`
+This tool answers the question: **"How much does partitioning distort the original shape of my data?"** It generates an overlaid plot comparing the original distribution of a feature to the reconstructed distribution from the partitions.
 
-For programmatic access to detailed metrics, you can use the `full_report` function. It returns a dictionary of dataclass objects containing rich statistical information about the variance and value-span for each feature.
+![Distribution Analyzer Plot](sample/distribution_analyzer_example.png)
+
+*In the plot above, the reconstructed distribution (red dashed line) closely tracks the original (blue line), indicating that the partitioning process has successfully preserved the feature's overall structure.*
 
 ```python
-from hvrt import full_report
+from hvrt import DistributionAnalyzer
 
-# ... after getting partition_labels
-
-report = full_report(X_sample, partition_labels)
-
-# Access detailed metrics for a specific feature
-feature_a_variance_hhi = report['feat_0'].variance_report.hhi
-print(f"\nVariance HHI for feat_0: {feature_a_variance_hhi:.4f}")
+analyzer = DistributionAnalyzer(data=X_sample, partition_labels=pd.Series(partition_labels, index=X_sample.index))
+analyzer.fit()
+analyzer.plot_comparison(
+    feature_name='feat_0',
+    save_path='analyzer_output/feat_0_comparison.png' # Optional
+)
 ```
 
----
+### Low-Level Metrics: `full_report`
 
-*Note: A previous metric `calculate_feature_hhi_metric` is now deprecated in favor of the more comprehensive `full_report` function and `PartitionProfiler` class.*
+For programmatic access to detailed metrics, `full_report` returns a dictionary of dataclass objects containing rich statistical information about the variance and value-span for each feature.
+
+*Note: A previous metric `calculate_feature_hhi_metric` is now deprecated in favor of the more comprehensive `full_report` function and the higher-level analysis tools.*
 
 ## How It Works
 
 The core heuristic is simple yet effective:
 
-1.  **Scale:** For each feature, the data is scaled. By default, this is a Z-score transformation, but any scikit-learn compatible scaler can be provided.
-2.  **Synthesize Target:** A new, single target vector (`y`) is created by summing the scaled features for each sample. This vector represents a measure of each sample's combined deviation from the mean.
-3.  **Fit Tree:** A standard `DecisionTreeRegressor` is trained to predict this synthetic `y` using the original features. The `max_leaf_nodes` parameter is used to control the granularity of the tree.
-4.  **Extract Partitions:** The terminal leaves of the fitted tree serve as the final partitions. The `.get_partitions()` method simply returns the ID of the leaf node that each sample falls into.
+1.  **Scale:** Data is scaled for each feature. By default, this is a Z-score transformation, but any scikit-learn compatible scaler can be provided.
+2.  **Synthesize Target:** A new target vector (`y`) is created by summing the scaled features for each sample.
+3.  **Fit Tree:** A `DecisionTreeRegressor` is trained to predict this synthetic `y`. The `max_leaf_nodes` parameter controls the tree's granularity.
+4.  **Extract Partitions:** The terminal leaves of the fitted tree serve as the final partitions.
 
 ## License
 
