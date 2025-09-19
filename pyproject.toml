@@ -32,3 +32,7 @@ dependencies = [
 test = [
     "pytest",
 ]
+viz = [
+    "matplotlib",
+    "seaborn",
+]
