@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.utils import deprecated
 
-from .feature_data import FeatureReport, SpanReport, VarianceReport
+from src.metrics.feature_data import FeatureReport, SpanReport, VarianceReport
 
 
 @deprecated

@@ -1,6 +1,6 @@
-from .metrics import full_report, calculate_feature_hhi_metric
-from .partition_profiler import PartitionProfiler
-from .feature_data import FeatureReport, SpanReport, VarianceReport
+from src.metrics.metrics import full_report, calculate_feature_hhi_metric
+from src.metrics.partition_profiler import PartitionProfiler
+from src.metrics.feature_data import FeatureReport, SpanReport, VarianceReport
 
 __all__ = [
     "full_report",
