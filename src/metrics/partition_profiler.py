@@ -2,6 +2,9 @@ import pandas as pd
 import os
 from typing import Dict, Optional
 
+from src.metrics.feature_data import FeatureReport
+from src.metrics.metrics import full_report
+
 # Optional visualization libraries
 try:
     import matplotlib.pyplot as plt
@@ -9,9 +12,6 @@ try:
     _VISUALIZATION_ENABLED = True
 except ImportError:
     _VISUALIZATION_ENABLED = False
-
-from .metrics import full_report
-from .feature_data import FeatureReport
 
 
 class PartitionProfiler:
