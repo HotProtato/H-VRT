@@ -10,11 +10,16 @@ from sklearn.base import TransformerMixin, clone
 
 class HVRTPartitioner:
     """
-    A fast, scalable algorithm for creating data partitions by training a decision tree
-    on a synthetic target variable derived from the z-scores of the input features.
+    A fast, scalable algorithm for creating data partitions.
 
-    This method is designed for creating a large number of fine-grained partitions
-    ("micro-approximations") and is optimized for speed at scale.
+    It works by training a decision tree on a synthetic multi-output target.
+    By default, this target is derived from the scaled values of the input features,
+    creating an unsupervised partitioning.
+
+    If a target variable `y` is provided, it is added to the synthetic target,
+    making the partitions sensitive to the target variable (semi-supervised partitioning).
+    This is useful for creating segments where a simpler model (e.g., linear regression)
+    can be fitted locally.
     """
     def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), min_variance_reduction: float=0.01, **tree_kwargs):
         """
@@ -35,12 +40,15 @@ class HVRTPartitioner:
         # min_impurity_decrease should only be used via min_var_reduction which makes the value relative as a % of the sum of y.
         self.tree_kwargs = {param: value for param, value in tree_kwargs.items() if param != "min_impurity_decrease"}
 
-    def fit(self, X):
+    def fit(self, X, y=None):
         """
-        Fits the partitioner to the data X.
+        Fits the partitioner to the data X, optionally using a target variable y
+        to influence the partitioning.
 
         Args:
-            X (pd.DataFrame or np.ndarray): The input data.
+            X (pd.DataFrame or np.ndarray): The input feature data.
+            y (pd.Series or np.ndarray, optional): The target variable. If provided,
+                it will be used to create target-aware partitions. Defaults to None.
 
         Returns:
             self: The fitted partitioner instance.
@@ -48,8 +56,14 @@ class HVRTPartitioner:
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X)
 
-        continuous_features = X.select_dtypes(include=np.number)
+        continuous_features = X.select_dtypes(include=np.number).copy()
         categorical_features = X.select_dtypes(exclude=np.number)
+
+        if y is not None:
+            if not np.issubdtype(y.dtype, np.number):
+                raise ValueError("The target y must be numeric.")
+            y_name = y.name if hasattr(y, 'name') and y.name else "target"
+            continuous_features[y_name] = y
 
         # 1. Normalization for continuous features
         X_scaled = self.scaler_.fit_transform(continuous_features)
@@ -68,7 +82,7 @@ class HVRTPartitioner:
         if not categorical_features.empty:
             # TargetEncoder requires a 1D target, so we use the mean of our multi-output y
             y_for_encoder = pd.Series(y_multi_output.mean(axis=1), index=X.index)
-            
+
             categorical_feature_names = list(categorical_features.columns)
             self.encoder_ = ColumnTransformer(
                 [('target_encoder', TargetEncoder(target_type='continuous'), categorical_feature_names)],
