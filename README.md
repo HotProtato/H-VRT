@@ -6,7 +6,7 @@ A fast, scalable algorithm for creating fine-grained data partitions, optimized 
 
 ## Key Features
 
-- **Extremely Fast:** Orders of magnitude faster than KMeans for creating a large number of partitions.
+- **Extremely Fast:** Orders of magnitudes faster than KMeans for creating a large number of partitions.
 - **Scalable:** Training time scales efficiently as the desired number of partitions increases.
 - **Configurable:** Allows for custom scaling methods to be used in the partitioning process.
 - **Analysis Tools:** Includes a powerful `PartitionProfiler` to analyze, visualize, and save reports on partition quality and effects.
