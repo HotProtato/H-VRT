@@ -87,6 +87,10 @@ The core heuristic is simple yet effective:
 3.  **Fit Tree:** A `DecisionTreeRegressor` is trained to predict this multi-output `y`. The `max_leaf_nodes` parameter controls the tree's granularity.
 4.  **Extract Partitions:** The terminal leaves of the fitted tree serve as the final partitions.
 
+## A point of clarity
+
+I have decided to allow for a list of y-values, where the logic is if you're wanting to have a feature contribute to the formation of the tree, but you cannot guarentee it will be present during inference or expect a lot of Na values, use it as y.
+
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
