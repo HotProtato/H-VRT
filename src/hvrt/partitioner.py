@@ -43,15 +43,16 @@ class HVRTPartitioner:
     synthetic target, making the partitions sensitive to the target variable(s)
     (semi-supervised partitioning).
     """
-    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), min_variance_reduction: float=0.01, impute: bool = True, **tree_kwargs):
+    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), min_variance_reduction: float=0.01, impute: bool = True, preserve_categories: bool = False, **tree_kwargs):
         """
-       Initializes the HVRTPartitioner with the specified parameters.
+        Initializes the HVRTPartitioner with the specified parameters.
 
         :param max_leaf_nodes: The number of partitions to create.
         :param weights: Increase or reduce the impact of each feature on the partitioning through weights.
         :param scaler: A scikit-learn compatible scaler for the target generation. Note: ignored if `impute=False`.
         :param min_variance_reduction: The minimum percentage of total variance that a split must reduce.
         :param impute: If True (default), missing values are imputed with the mean. If False, NaNs are preserved.
+        :param preserve_categories: If True, the categorical feature encodings are stored in `self.categorical_lookups_`.
         :param tree_kwargs: Additional arguments to be passed to the scikit-learn Decision Tree Regressor.
         """
         self.max_leaf_nodes = max_leaf_nodes
@@ -62,6 +63,8 @@ class HVRTPartitioner:
         self.scaler_ = clone(scaler)
         self.min_var_reduction = min_variance_reduction
         self.impute = impute
+        self.preserve_categories = preserve_categories
+        self.categorical_lookups_ = {}
         self.tree_kwargs = {param: value for param, value in tree_kwargs.items() if param != "min_impurity_decrease"}
 
         self.y_target_preprocessor_ = None
@@ -134,7 +137,7 @@ class HVRTPartitioner:
             self.y_target_preprocessor_ = NanTolerantScaler()
             y_multi_output = self.y_target_preprocessor_.fit_transform(y_target_features)
 
-            categorical_pipeline = TargetEncoder(target_type='continuous', handle_unknown='use_encoded_value', unknown_value=np.nan)
+            categorical_pipeline = TargetEncoder(target_type='continuous')
             self.tree_preprocessor_ = ColumnTransformer(
                 transformers=[
                     ('continuous', 'passthrough', X_continuous.columns.tolist()),
@@ -151,6 +154,21 @@ class HVRTPartitioner:
 
         y_for_encoder = np.nanmean(y_multi_output, axis=1)
         X_for_tree = self.tree_preprocessor_.fit_transform(X, y_for_encoder)
+
+        if self.preserve_categories:
+            categorical_transformer = self.tree_preprocessor_.named_transformers_['categorical']
+            if isinstance(categorical_transformer, Pipeline):
+                # Handle case where TargetEncoder is inside a pipeline
+                target_encoder = categorical_transformer.named_steps['encoder']
+            else:
+                target_encoder = categorical_transformer
+
+            cat_features = self.tree_preprocessor_.transformers_[1][2]
+
+            for i, feature in enumerate(cat_features):
+                categories = target_encoder.categories_[i]
+                encodings = target_encoder.encodings_[i]
+                self.categorical_lookups_[feature] = dict(zip(categories, encodings))
 
         min_impurity_reduction = np.sum(np.nan_to_num(y_multi_output)**2) * self.min_var_reduction
         self.tree_ = DecisionTreeRegressor(
@@ -176,7 +194,6 @@ class HVRTPartitioner:
             raise RuntimeError("The partitioner has not been fitted yet. Call fit() first.")
 
         if not isinstance(X, pd.DataFrame):
-            # Attempt to give columns names if they are missing for the transformer
             if hasattr(self.tree_preprocessor_, 'feature_names_in_') and X.shape[1] == len(self.tree_preprocessor_.feature_names_in_):
                 X = pd.DataFrame(X, columns=self.tree_preprocessor_.feature_names_in_)
             else:
@@ -184,6 +201,23 @@ class HVRTPartitioner:
 
         X_transformed = self.tree_preprocessor_.transform(X)
         return self.tree_.apply(X_transformed)
+
+
+    def get_categorical_lookups(self):
+        """
+        Returns the categorical feature encoding lookups.
+
+        This is only available if `preserve_categories` was set to True during initialization.
+
+        Returns:
+            dict: A dictionary where keys are categorical feature names and values are
+                  dictionaries mapping original categories to their encoded numerical values.
+        """
+        if not self.preserve_categories:
+            raise RuntimeError("Categorical lookups were not preserved. "
+                               "Initialize the partitioner with `preserve_categories=True`.")
+        return self.categorical_lookups_
+
 
     def fit_predict(self, X, y=None):
         self.fit(X, y)
