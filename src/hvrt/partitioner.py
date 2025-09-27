@@ -50,7 +50,7 @@ class HVRTPartitioner:
         :param max_leaf_nodes: The number of partitions to create.
         :param weights: Increase or reduce the impact of each feature on the partitioning through weights.
         :param scaler: A scikit-learn compatible scaler for the target generation. Note: ignored if `impute=False`.
-        :param min_variance_reduction: The minimum percentage of total variance that a split must reduce.
+        :param min_variance_reduction: The minimum percentage of average variance that a split must reduce.
         :param impute: If True (default), missing values are imputed with the mean. If False, NaNs are preserved.
         :param preserve_categories: If True, the categorical feature encodings are stored in `self.categorical_lookups_`.
         :param tree_kwargs: Additional arguments to be passed to the scikit-learn Decision Tree Regressor.
@@ -170,7 +170,7 @@ class HVRTPartitioner:
                 encodings = target_encoder.encodings_[i]
                 self.categorical_lookups_[feature] = dict(zip(categories, encodings))
 
-        min_impurity_reduction = np.sum(np.nan_to_num(y_multi_output)**2) * self.min_var_reduction
+        min_impurity_reduction = np.mean(np.nan_to_num(y_multi_output)**2) * self.min_var_reduction
         self.tree_ = DecisionTreeRegressor(
             max_leaf_nodes=self.max_leaf_nodes,
             min_impurity_decrease=min_impurity_reduction,
