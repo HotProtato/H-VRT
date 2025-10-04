@@ -6,7 +6,7 @@ from sklearn.base import TransformerMixin, clone, BaseEstimator
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, TargetEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder
 from sklearn.tree import DecisionTreeRegressor
 
 
@@ -43,7 +43,7 @@ class HVRTPartitioner:
     synthetic target, making the partitions sensitive to the target variable(s)
     (semi-supervised partitioning).
     """
-    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), min_variance_reduction: float=0.01, impute: bool = True, preserve_categories: bool = False, **tree_kwargs):
+    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), min_variance_reduction: float=0.01, impute: bool = True, category_encoding: str = 'ohe', target_categories: bool = False, **tree_kwargs):
         """
         Initializes the HVRTPartitioner with the specified parameters.
 
@@ -51,8 +51,9 @@ class HVRTPartitioner:
         :param weights: Increase or reduce the impact of each feature on the partitioning through weights.
         :param scaler: A scikit-learn compatible scaler for the target generation. Note: ignored if `impute=False`.
         :param min_variance_reduction: The minimum percentage of average variance that a split must reduce.
-        :param impute: If True (default), missing values are imputed with the mean. If False, NaNs are preserved.
-        :param preserve_categories: If True, the categorical feature encodings are stored in `self.categorical_lookups_`.
+        :param impute: If True (default), missing values are imputed with the mean. If False, NaNs are preserved, allowing for custom imputation strategies post-partitioning.
+        :param category_encoding: The encoding method for categorical features in X. Can be 'ohe' (OneHotEncoder) or 'target' (TargetEncoder). Defaults to 'ohe'.
+        :param target_categories: If True, the target variable y is treated as categorical and one-hot encoded.
         :param tree_kwargs: Additional arguments to be passed to the scikit-learn Decision Tree Regressor.
         """
         self.max_leaf_nodes = max_leaf_nodes
@@ -63,9 +64,14 @@ class HVRTPartitioner:
         self.scaler_ = clone(scaler)
         self.min_var_reduction = min_variance_reduction
         self.impute = impute
-        self.preserve_categories = preserve_categories
-        self.categorical_lookups_ = {}
+        self.category_encoding = category_encoding
+        self.target_categories = target_categories
         self.tree_kwargs = {param: value for param, value in tree_kwargs.items() if param != "min_impurity_decrease"}
+
+        if self.category_encoding not in ['ohe', 'target']:
+            raise ValueError("category_encoding must be either 'ohe' or 'target'.")
+        if self.category_encoding == 'target' and self.target_categories:
+            raise ValueError("category_encoding='target' is incompatible with target_categories=True.")
 
         self.y_target_preprocessor_ = None
         self.tree_preprocessor_ = None
@@ -103,8 +109,10 @@ class HVRTPartitioner:
             else:
                 raise TypeError("y must be a pandas Series, DataFrame, or a numpy array.")
 
-            if not all(np.issubdtype(dtype, np.number) for dtype in y_df.dtypes):
-                raise ValueError("All columns in the target y must be numeric.")
+            if self.target_categories:
+                y_df = pd.get_dummies(y_df, columns=y_df.columns)
+            elif not all(np.issubdtype(dtype, np.number) for dtype in y_df.dtypes):
+                raise ValueError("All columns in the target y must be numeric when target_categories is False.")
 
             duplicate_cols = y_target_features.columns.intersection(y_df.columns)
             if not duplicate_cols.empty:
@@ -112,39 +120,41 @@ class HVRTPartitioner:
 
             y_target_features = pd.concat([y_target_features, y_df], axis=1)
 
+        # Define pipelines based on flags
         if self.impute:
-            # === IMPUTATION PATH ===
             self.y_target_preprocessor_ = Pipeline([
                 ('imputer', SimpleImputer(strategy='mean')),
                 ('scaler', self.scaler_)
             ])
-            y_multi_output = self.y_target_preprocessor_.fit_transform(y_target_features)
-
             continuous_pipeline = SimpleImputer(strategy='mean')
-            categorical_pipeline = Pipeline([
-                ('imputer', SimpleImputer(strategy='most_frequent')),
-                ('encoder', TargetEncoder(target_type='continuous'))
-            ])
-            self.tree_preprocessor_ = ColumnTransformer(
-                transformers=[
-                    ('continuous', continuous_pipeline, X_continuous.columns.tolist()),
-                    ('categorical', categorical_pipeline, X_categorical.columns.tolist())
-                ],
-                remainder='passthrough'
-            )
+            cat_imputer = SimpleImputer(strategy='most_frequent')
         else:
-            # === NAN-PRESERVING PATH ===
             self.y_target_preprocessor_ = NanTolerantScaler()
-            y_multi_output = self.y_target_preprocessor_.fit_transform(y_target_features)
+            continuous_pipeline = 'passthrough'
+            cat_imputer = None
 
-            categorical_pipeline = TargetEncoder(target_type='continuous')
-            self.tree_preprocessor_ = ColumnTransformer(
-                transformers=[
-                    ('continuous', 'passthrough', X_continuous.columns.tolist()),
-                    ('categorical', categorical_pipeline, X_categorical.columns.tolist())
-                ],
-                remainder='passthrough'
-            )
+        y_multi_output = self.y_target_preprocessor_.fit_transform(y_target_features)
+
+        if self.category_encoding == 'ohe':
+            cat_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+        else:  # 'target'
+            cat_encoder = TargetEncoder(target_type='continuous')
+
+        if cat_imputer:
+            categorical_pipeline = Pipeline([
+                ('imputer', cat_imputer),
+                ('encoder', cat_encoder)
+            ])
+        else:
+            categorical_pipeline = cat_encoder
+
+        self.tree_preprocessor_ = ColumnTransformer(
+            transformers=[
+                ('continuous', continuous_pipeline, X_continuous.columns.tolist()),
+                ('categorical', categorical_pipeline, X_categorical.columns.tolist())
+            ],
+            remainder='passthrough'
+        )
 
         if self.weights:
             # Find column indices for weights and apply them
@@ -155,20 +165,7 @@ class HVRTPartitioner:
         y_for_encoder = np.nanmean(y_multi_output, axis=1)
         X_for_tree = self.tree_preprocessor_.fit_transform(X, y_for_encoder)
 
-        if self.preserve_categories:
-            categorical_transformer = self.tree_preprocessor_.named_transformers_['categorical']
-            if isinstance(categorical_transformer, Pipeline):
-                # Handle case where TargetEncoder is inside a pipeline
-                target_encoder = categorical_transformer.named_steps['encoder']
-            else:
-                target_encoder = categorical_transformer
 
-            cat_features = self.tree_preprocessor_.transformers_[1][2]
-
-            for i, feature in enumerate(cat_features):
-                categories = target_encoder.categories_[i]
-                encodings = target_encoder.encodings_[i]
-                self.categorical_lookups_[feature] = dict(zip(categories, encodings))
 
         min_impurity_reduction = np.mean(np.nan_to_num(y_multi_output)**2) * self.min_var_reduction
         self.tree_ = DecisionTreeRegressor(
@@ -202,21 +199,6 @@ class HVRTPartitioner:
         X_transformed = self.tree_preprocessor_.transform(X)
         return self.tree_.apply(X_transformed)
 
-
-    def get_categorical_lookups(self):
-        """
-        Returns the categorical feature encoding lookups.
-
-        This is only available if `preserve_categories` was set to True during initialization.
-
-        Returns:
-            dict: A dictionary where keys are categorical feature names and values are
-                  dictionaries mapping original categories to their encoded numerical values.
-        """
-        if not self.preserve_categories:
-            raise RuntimeError("Categorical lookups were not preserved. "
-                               "Initialize the partitioner with `preserve_categories=True`.")
-        return self.categorical_lookups_
 
 
     def fit_predict(self, X, y=None):
