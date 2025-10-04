@@ -43,6 +43,22 @@ partition_labels = partitioner.get_partitions(X_sample)
 print(f"Successfully assigned {len(X_sample)} samples to {len(np.unique(partition_labels))} partitions.")
 ```
 
+## API and Parameters
+
+The `HVRTPartitioner` is configured upon initialization. Here are the key parameters:
+
+-   `max_leaf_nodes` (int, optional): The maximum number of partitions to create. This directly controls the granularity of the partitioning.
+-   `weights` (Dict[str, float], optional): A dictionary to increase or reduce the impact of specific features on the partitioning process. Keys are feature names, and values are the corresponding weights.
+-   `impute` (bool, default=`True`): If `True`, missing values are imputed using the mean for numeric features and the most frequent value for categorical features. If `False`, NaNs are preserved, allowing for custom imputation strategies (e.g., localized imputation within partitions) after the data is labeled.
+-   `category_encoding` (str, default=`'ohe'`): The encoding strategy for categorical features in your input data `X`.
+    -   `'ohe'`: Uses `OneHotEncoder`. This is generally better for accuracy but can lead to larger, more complex trees.
+    -   `'target'`: Uses `TargetEncoder`. This results in smaller, less complex trees but may offer less predictive accuracy.
+-   `target_categories` (bool, default=`False`): Set this to `True` if your target variable `y` is categorical. The partitioner will one-hot encode `y` and use it to guide the partitioning, optimizing for class purity.
+-   `scaler` (TransformerMixin, optional): A scikit-learn compatible scaler for the target generation process. Defaults to `StandardScaler`.
+-   `min_variance_reduction` (float, default=`0.01`): The minimum percentage of average variance that a split must reduce to be considered.
+
+**Note on Compatibility:** Using `category_encoding='target'` is incompatible with `target_categories=True`. The partitioner will raise a `ValueError` if these settings are used together.
+
 ## Analyzing Partitions
 
 The library includes powerful tools for understanding the quality and effects of your partitions.
@@ -82,9 +98,11 @@ print(f"Feature 0 Variance HHI: {feature_0_report.variance_report.hhi}")
 
 The core heuristic is simple yet effective:
 
-1.  **Scale:** Data is scaled for each feature. By default, this is a Z-score transformation, but any scikit-learn compatible scaler can be provided.
-2.  **Synthesize Target:** For continuous features, the scaled features themselves become the multi-output target (`y`). For categorical features, a synthetic target is created by summing the scaled continuous features for target encoding.
-3.  **Fit Tree:** A `DecisionTreeRegressor` is trained to predict this multi-output `y`. The `max_leaf_nodes` parameter controls the tree's granularity.
+1.  **Synthesize Target:** A multi-output synthetic target is created. By default, this consists of the z-score scaled values of the input features `X`. If a target variable `y` is provided, it is also scaled and appended to this synthetic target.
+2.  **Encode Features:**
+    -   **Continuous Features:** Passed through directly or imputed if `impute=True`.
+    -   **Categorical Features:** Encoded based on the `category_encoding` parameter (`'ohe'` or `'target'`).
+3.  **Fit Tree:** A `DecisionTreeRegressor` is trained to predict the multi-output synthetic target using the encoded features. The `max_leaf_nodes` parameter controls the tree's granularity.
 4.  **Extract Partitions:** The terminal leaves of the fitted tree serve as the final partitions.
 
 ## A point of clarity
