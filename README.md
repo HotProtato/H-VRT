@@ -55,7 +55,7 @@ The `HVRTPartitioner` is configured upon initialization. Here are the key parame
     -   `'target'`: Uses `TargetEncoder`. This results in smaller, less complex trees but may offer less predictive accuracy.
 -   `target_categories` (bool, default=`False`): Set this to `True` if your target variable `y` is categorical. The partitioner will one-hot encode `y` and use it to guide the partitioning, optimizing for class purity.
 -   `scaler` (TransformerMixin, optional): A scikit-learn compatible scaler for the target generation process. Defaults to `StandardScaler`.
--   `min_variance_reduction` (float, default=`0.01`): The minimum percentage of average variance that a split must reduce to be considered.
+-   `min_impurity_reduction` (float, default=`0.01`): The minimum percentage of average impurity that a split must reduce to be considered.
 
 **Note on Compatibility:** Using `category_encoding='target'` is incompatible with `target_categories=True`. The partitioner will raise a `ValueError` if these settings are used together.
 
@@ -115,7 +115,5 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 ## Future
 
-1. I am looking to provide support for Fsspec and potentially SQLAlclhemy for storing and populating metrics.
-2. Another framework that specifically uses the sum of z-scores as a synthetic y, deliberately capturing overfitting will be in the works. The goal if this framework is instead, to objectively capture feature complexity for a given system.
-3. A visual reconstruction of features given every other feature, where stronger deviations indicate greater complexity or greater influence from other features will be made. This will require PyTorch.
-4. **Advanced Inference-Time Imputation:** An advanced imputation strategy is being explored for handling missing values in new data. When a sample is missing a value required for a split, instead of relying on a simple default, the algorithm could look ahead. By analyzing the sample's other known features, it could calculate the probability of the sample belonging to each possible downstream partition. If the probabilistic analysis is inconclusive, it would fall back to a standard global mean imputation. This would enable more accurate and robust partitioning for incomplete data.
+1. Multiprocessing for capturing metrics will be in the works; to generate the metrics themselves is more taxing than fitting the tree.
+2. At the time of writing this, I am improving upon my causal discovoery and causal effect estimation repository, that uses an unsupervised forest https://github.com/hotprotato/cdtree. I advise keeping an eye on this repository; it could allow for the early capture of emergence, suitable for cybersecurity and detecting model drift early.
