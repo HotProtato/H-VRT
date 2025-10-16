@@ -43,14 +43,14 @@ class HVRTPartitioner:
     synthetic target, making the partitions sensitive to the target variable(s)
     (semi-supervised partitioning).
     """
-    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), min_variance_reduction: float=0.01, impute: bool = True, category_encoding: str = 'ohe', target_categories: bool = False, **tree_kwargs):
+    def __init__(self, max_leaf_nodes=None, weights: Dict[str, float]=None, scaler: TransformerMixin=StandardScaler(), min_impurity_reduction: float=0.01, impute: bool = True, category_encoding: str = 'ohe', target_categories: bool = False, categorical_features: List[str] = None, **tree_kwargs):
         """
         Initializes the HVRTPartitioner with the specified parameters.
 
         :param max_leaf_nodes: The number of partitions to create.
         :param weights: Increase or reduce the impact of each feature on the partitioning through weights.
         :param scaler: A scikit-learn compatible scaler for the target generation. Note: ignored if `impute=False`.
-        :param min_variance_reduction: The minimum percentage of average variance that a split must reduce.
+        :param min_impurity_reduction: The minimum percentage of average impurity that a split must reduce.
         :param impute: If True (default), missing values are imputed with the mean. If False, NaNs are preserved, allowing for custom imputation strategies post-partitioning.
         :param category_encoding: The encoding method for categorical features in X. Can be 'ohe' (OneHotEncoder) or 'target' (TargetEncoder). Defaults to 'ohe'.
         :param target_categories: If True, the target variable y is treated as categorical and one-hot encoded.
@@ -62,10 +62,11 @@ class HVRTPartitioner:
         self.tree_kwargs.setdefault("random_state", 42)
         self.tree_ = None
         self.scaler_ = clone(scaler)
-        self.min_var_reduction = min_variance_reduction
+        self.min_impurity_reduction = min_impurity_reduction
         self.impute = impute
         self.category_encoding = category_encoding
         self.target_categories = target_categories
+        self.categorical_features = categorical_features
         self.tree_kwargs = {param: value for param, value in tree_kwargs.items() if param != "min_impurity_decrease"}
 
         if self.category_encoding not in ['ohe', 'target']:
@@ -92,8 +93,16 @@ class HVRTPartitioner:
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X, columns=[f"f{i}" for i in range(X.shape[1])])
 
-        X_continuous = X.select_dtypes(include=np.number)
-        X_categorical = X.select_dtypes(exclude=np.number)
+        if self.categorical_features:
+            # Use explicitly defined categorical features
+            X_categorical = X[self.categorical_features]
+            X_continuous = X.drop(columns=self.categorical_features, errors='ignore')
+            # Further filter continuous to ensure they are numeric
+            X_continuous = X_continuous.select_dtypes(include=np.number)
+        else:
+            # Infer categorical and continuous features from dtypes
+            X_continuous = X.select_dtypes(include=np.number)
+            X_categorical = X.select_dtypes(exclude=np.number)
 
         y_target_features = X_continuous.copy()
         if y is not None:
@@ -167,7 +176,7 @@ class HVRTPartitioner:
 
 
 
-        min_impurity_reduction = np.mean(np.nan_to_num(y_multi_output)**2) * self.min_var_reduction
+        min_impurity_reduction = np.mean(np.nan_to_num(y_multi_output)**2) * self.min_impurity_reduction
         self.tree_ = DecisionTreeRegressor(
             max_leaf_nodes=self.max_leaf_nodes,
             min_impurity_decrease=min_impurity_reduction,
@@ -204,3 +213,8 @@ class HVRTPartitioner:
     def fit_predict(self, X, y=None):
         self.fit(X, y)
         return self.get_partitions(X)
+
+    def get_tree(self):
+        if self.tree_ is None:
+            raise RuntimeError("The partitioner has not been fitted yet.")
+        return self.tree_
